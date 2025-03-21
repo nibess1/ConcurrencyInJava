@@ -16,10 +16,7 @@ public class HotDogManager {
     private static Object writer_lock = new Object();
 
     private static Object production_lock = new Object();
-    private static int production_id = 0;
-
-    private static Object consumption_lock = new Object();
-    private static int consumption_id = 0;
+    private static int production_id = 1;
 
     public static void main(String[] args) {
         num_hotdogs = Integer.parseInt(args[0]);
@@ -58,7 +55,7 @@ public class HotDogManager {
                     Hotdog hotdog;
                     //break out of the loop when enough hotdogs have been made
                     synchronized(production_lock){
-                        if(production_id >= num_hotdogs){
+                        if(production_id > num_hotdogs){
                             break;
                         }
                         hotdog = m.make_hot_dog(production_id++);
@@ -87,7 +84,6 @@ public class HotDogManager {
                         break;
                     }
                     p.pack(hotdog, writer, writer_lock);
-                    // System.out.println("packed " + hotdog+ " by " + p.get_packing_machine_id());
                 }
             });
             consumer[i] = t;
@@ -100,27 +96,24 @@ public class HotDogManager {
         for (Thread t : consumer) {
             threads.add(t);
         }
-        // start all the threads together, might not be necessary
+        // start all the threads together
         for (Thread thread : threads) {
             thread.start();
         }
 
         // join the producer threads first to signify completion of production
-        int c =0;
         for (Thread thread : producer) {
             try {
-                System.out.println(c++);
                 thread.join();
-                System.out.println(c++);
-
-                buffer.productionComplete = true;
-                synchronized (buffer) {
-                    buffer.notifyAll(); // wake up any waiting consumers
-                }
-
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
+        }
+        
+        // Set production complete AFTER all producer threads have finished
+        buffer.productionComplete = true;
+        synchronized (buffer) {
+            buffer.notifyAll(); // wake up any waiting consumers
         }
 
         // join the consumer threads before printing out summary
@@ -134,7 +127,6 @@ public class HotDogManager {
 
         // print out summary and close the buffered writer
         try {
-
             writer.write("summary:");
             writer.newLine();
             for (MakingMachine m : makers) {
@@ -172,7 +164,6 @@ class MakingMachine {
         synchronized (lock) {
             machine_idx = id_gen - 1;
             making_machine_id = "m" + id_gen++;
-            // System.out.println(making_machine_id + "machine started");
         }
     }
 
@@ -193,7 +184,6 @@ class MakingMachine {
         Worker.doWork(WorkUnit.TIME_TO_MAKE);
         return new Hotdog(id, making_machine_id);
     }
-
 }
 
 class PackingMachine {
@@ -201,15 +191,9 @@ class PackingMachine {
     private String packing_machine_id;
     private int machine_idx;
 
-    // id generation performed using a lock to prevent multiple machines with same
-    // id
-
+    // id generation performed using a lock to prevent multiple machines with same id
     private static volatile int id_gen = 1;
     public static final Object lock = new Object();
-
-    // track the latest hotdog finished packing
-    public static volatile int latest_hotdog = 0;
-    private static final Object hotdog_lock = new Object();
 
     private int packed_count = 0;
 
@@ -217,7 +201,6 @@ class PackingMachine {
         synchronized (lock) {
             machine_idx = id_gen - 1;
             packing_machine_id = "p" + id_gen++;
-            // System.out.println(packing_machine_id + "machine started");
         }
     }
 
@@ -234,14 +217,7 @@ class PackingMachine {
     }
 
     public void pack(Hotdog hotdog, BufferedWriter writer, Object writer_lock) {
-        // 1. Check if any hotdogs in the buffer: performed in buffer.get()
-        // 2. take 1 hotdog from the buffer -> 1 unit of time: performed in buffer.get()
-        // 3. perform pack -> 2 unit of time
-        // 4. add to log
         Worker.doWork(WorkUnit.TIME_TO_PACK);
-        synchronized (hotdog_lock) {
-            latest_hotdog++;
-        }
         packed_count++;
         write_record(hotdog, writer, writer_lock);
     }
@@ -256,23 +232,15 @@ class PackingMachine {
             e.printStackTrace();
         }
     }
-
 }
 
 class Buffer {
 
-    private static volatile Hotdog[] buffer;
-
-    private static volatile int front = 0;
-
-    private static volatile int back = 0;
-
-    private static volatile int itemCount = 0;
-
+    private volatile Hotdog[] buffer;
+    private volatile int front = 0;
+    private volatile int back = 0;
+    private volatile int itemCount = 0;
     public volatile boolean productionComplete = false;
-
-    // private static int put_count = 0;
-    // private static int get_count = 0;
 
     Buffer(int num_slots) {
         buffer = new Hotdog[num_slots];
@@ -292,9 +260,9 @@ class Buffer {
     synchronized void put(Hotdog hotdog, BufferedWriter writer, Object writerLock) {
         while (itemCount == buffer.length) {
             try {
-                System.out.println(hotdog);
                 this.wait();
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         }
 
@@ -303,7 +271,6 @@ class Buffer {
         back = (back + 1) % buffer.length;
         itemCount++;
         write_record(hotdog, writer, writerLock);
-        // System.out.println("total added " + put_count++);
         this.notifyAll();
     }
 
@@ -316,13 +283,13 @@ class Buffer {
             try {
                 this.wait();
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         }
         Worker.doWork(WorkUnit.TIME_TO_TAKE);
         final Hotdog hotdog = buffer[front];
         front = (front + 1) % buffer.length;
         itemCount--;
-        // System.out.println("total taken " + get_count++);
         this.notifyAll();
         return hotdog;
     }
@@ -366,7 +333,6 @@ enum WorkUnit {
     WorkUnit(int timeTaken) {
         this.timeTaken = timeTaken;
     }
-
 }
 
 class Worker {
@@ -380,5 +346,4 @@ class Worker {
             }
         }
     }
-
 }
