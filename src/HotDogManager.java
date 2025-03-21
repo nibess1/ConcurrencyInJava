@@ -77,9 +77,10 @@ public class HotDogManager {
             packers[p.get_machine_idx()] = p;
             final Thread t = new Thread(() -> {
                 while (true) {
-                    final Hotdog hotdog = buffer.get();
                     // returns null if entered while loop after all the hotdogs have already been
                     // cleared
+                    final Hotdog hotdog = buffer.get();
+                    
                     if (hotdog == null) {
                         break;
                     }
@@ -262,7 +263,7 @@ class Buffer {
             try {
                 this.wait();
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+                e.printStackTrace();
             }
         }
 
@@ -283,7 +284,7 @@ class Buffer {
             try {
                 this.wait();
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+                e.printStackTrace();
             }
         }
         Worker.doWork(WorkUnit.TIME_TO_TAKE);
